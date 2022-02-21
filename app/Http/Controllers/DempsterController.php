@@ -4,122 +4,204 @@ namespace App\Http\Controllers;
 
 use App\Models\Gejala;
 use Illuminate\Http\Request;
-use stdClass;
 
 class DempsterController extends Controller
 {
 
-    public function tes()
-    {
-        $object = new stdClass();
-
-        $object2 = new stdClass();
-
-        $object2->name = array();
-
-        $object2->name = 'akmal';
-
-        $object->name = array();
-
-        $object->name[] = $object2;
-        $object->name[] = 'arfan';
-
-        return $object;
-    }
-
     public function dempster(Request $request)
     {
-        $nilai_konflik = [];
-        $m_selanjutnya = [];
-        $aturan_gejala = $this->getData($request->gejala);
+        $request->validate([
+            'gejala' => 'required',
+        ]);
 
-        // return $aturan_gejala;
+        $aturan_gejala = $this->getAturan($request->gejala);
 
-        $himpunan_irisan =  $this->get_irisan($aturan_gejala[0]["himpunan"][0], $aturan_gejala[1]["himpunan"][0]);
+        if (count($aturan_gejala) < 2) {
+            return "Gejala minimal 2";
+        } else if (count($aturan_gejala) >= 2) {
+            $resultMassFunction = $this->mass_function_1($aturan_gejala[0], $aturan_gejala[1]);
+            $startGejala = 2;
 
-        // return $himpunan_irisan;
+            for ($i = $startGejala; $i < count($aturan_gejala); $i++) {
+                $resultMassFunction = $this->mass_function_1($aturan_gejala[$startGejala], $resultMassFunction);
+            }
 
-        $mass_function_1 = $this->mass_function_1($aturan_gejala[0], $aturan_gejala[1], $himpunan_irisan);
+            $result = $resultMassFunction;
+        }
 
-        // return $mass_function_1;
-
-        array_push($m_selanjutnya, $mass_function_1["hasil"]);
-        array_push($nilai_konflik, $mass_function_1["konflik"]);
-
-        return [
-            'm_selanjutnya' => $m_selanjutnya,
-            'nilai_konflik' => $nilai_konflik
-        ];
+        return $result;
     }
 
-    function getData($gejala) // mengambil data dari database
-    {
-        $index = 0;
-        foreach ($gejala as $id_gejala) { // Mengambil gejala dari database
-            $data_gejala = Gejala::where('id', $id_gejala)->with(['aturan', 'aturan.penyakit'])->first();
-            $index_penyakit = 0;
+    /**
+     * method getAturan
+     * untuk mengambil data aturan di database
+     * 
+     * @param array $gejala
+     * 
+     * @return object $aturan_gejala
+     */
 
-            // Mengatur data agar lebih terstruktur
-            foreach ($data_gejala->aturan as $data_aturan) {
-                $aturan[$index]["himpunan"][0][$index_penyakit]["id"] = $data_aturan->penyakit->id;
-                $aturan[$index]["himpunan"][0][$index_penyakit]["nama_penyakit"] = $data_aturan->penyakit->nama_penyakit;
-                $aturan[$index]["himpunan"][0][$index_penyakit]["keterangan"] = $data_aturan->penyakit->keterangan;
-                $aturan[$index]["himpunan"][0][$index_penyakit]["saran"] = $data_aturan->penyakit->saran;
-                $aturan[$index]["himpunan"][0][$index_penyakit]["kode"] = $data_aturan->penyakit->kode;
-                $aturan[$index]["himpunan"][0][$index_penyakit]["value"] = $data_gejala->aturan[0]->bobot;
-                $index_penyakit++;
+    function getAturan($gejala)
+    {
+        foreach ($gejala as $index => $id_gejala) {
+            $data_gejala = Gejala::where('id', $id_gejala)->with(['aturan', 'aturan.penyakit'])->first();
+
+
+            foreach ($data_gejala->aturan as $index_penyakit => $data_aturan) {
+                $aturan[$index][0]["penyakit"][$index_penyakit] = $data_aturan->penyakit->id;
             }
-            $aturan[$index]["himpunan"][1][0]["id"] = 'θ';
-            $aturan[$index]["himpunan"][1][0]["value"] = round(1 - $data_gejala->aturan[0]->bobot, 2);
-            $aturan[$index]["nama_gejala"] = $data_gejala->nama_gejala;
-            $aturan[$index]["kode_gejala"] = $data_gejala->kode;
-            $aturan[$index]["value"] = $data_gejala->aturan[0]->bobot;
-            $aturan[$index]["value_invert"] = round(1 - $data_gejala->aturan[0]->bobot, 2);
-            $index++;
+
+            $aturan[$index][0]["bobot"] = $data_gejala->aturan[0]->bobot;
+            $aturan[$index][0]["conflict"] = 0;
+
+            $aturan[$index][1]["penyakit"] = ['θ'];
+            $aturan[$index][1]["bobot"] = round(1 - $data_gejala->aturan[0]->bobot, 2);
+            $aturan[$index][1]["conflict"] = 0;
         }
-        // $aturan[$index][1][0]["id"] = ['θ'];
 
         return $aturan;
     }
 
-    function mass_function_1($m_col, $m_row, $irisan) // menghitung nilai bobot
-    {
-        $himpunan_hasil = null;
-        $nilai_konflik = [];
-        $densitas_baru = $m_col["value"] * $m_row["value"];
-        if ($irisan) {
-            $data = [
-                'penyakit' => $irisan,
-                'densitas' => round($densitas_baru, 4),
-            ];
-            $himpunan_hasil = $data;
-        } else {
-            $data = [
-                'penyakit' => "konflik",
-                'densitas' => round($densitas_baru, 4),
-            ];
-            $himpunan_hasil = $data;
-            array_push($nilai_konflik, round($densitas_baru, 4));
-        }
+    /**
+     * method mass_function_1
+     * adalah perhitungan mass_function dalam tabel, untuk mengetahui himpunan hasil get_irisan
+     * @param  array $m_col [himpunan1]
+     * @param  array $m_row [himpunan2]
+     * 
+     * @return array
+     */
 
-
-        return [
-            'hasil' => $himpunan_hasil,
-            'konflik' => $nilai_konflik
-        ];
-    }
-
-    function get_irisan(array $data1, array $data2) // mencari irisan
+    function mass_function_1($m_col, $m_row)
     {
         $result = [];
-        for ($i = 0; $i < count($data1); $i++) {
-            for ($j = 0; $j < count($data2); $j++) {
-                if ($data1[$i]['id'] == $data2[$j]['id']) {
-                    array_push($result, $data1[$i]);
+        foreach ($m_col as $data_col) {
+            foreach ($m_row as $data_row) {
+                $irisan = $this->getIrisan($data_col, $data_row);
+                array_push($result, $irisan);
+            }
+        }
+
+        $conflict = $this->countConflict($result);
+
+        $result = $this->finalizeResult($result, $conflict);
+
+        return $result;
+    }
+
+    /**
+     * method getIrisan
+     * untuk mencari irisan antara 2 himpunan
+     * 
+     * @param array $data1 [himpunan 1]
+     * @param array $data2 [himpunan 2]
+     * 
+     * @return array $result [irisan antara 2 himpunan]
+     */
+
+    function getIrisan(array $data1, array $data2)
+    {
+        $irisan = [];
+        for ($i = 0; $i < count($data1["penyakit"]); $i++) {
+            for ($j = 0; $j < count($data2["penyakit"]); $j++) {
+                if ($data1["penyakit"][$i] == $data2["penyakit"][$j]) {
+                    array_push($irisan, $data1["penyakit"][$i]);
                 }
             }
         }
 
+        if (count($irisan) <= 0) {
+            $result1 = $this->getNotTeta($data1["penyakit"]);
+            $result2 = $this->getNotTeta($data2["penyakit"]);
+
+            if (count($result1) > 0) {
+                $result["penyakit"] = $result1;
+            } else if (count($result2) > 0) {
+                $result["penyakit"] = $result2;
+            }
+        } else {
+            $result["penyakit"] = $irisan;
+        }
+
+        $result["bobot"] = round($data1["bobot"] * $data2["bobot"], 2);
+        $result["conflict"] = 0;
+
         return $result;
+    }
+
+    /**
+     * method countConflict
+     * untuk menghitung jumlah konflik
+     * 
+     * @param array $array [array data]
+     * @return int $result
+     */
+
+    public function countConflict($array)
+    {
+        $result = 0;
+        foreach ($array as $data) {
+            $result = $result + $data["conflict"];
+        }
+
+        return $result;
+    }
+
+    /**
+     * method finalizeResult
+     * untuk menghitung himpunan akhir dari Mass mass_function_1
+     * 
+     * @param array $dataSet [himpunan data]
+     * @param int $conflict [nilai konflik]
+     * 
+     * @return array $result
+     */
+
+    public function finalizeResult($dataSet, $conflict)
+    {
+        $result = null;
+        foreach ($dataSet as $index => $data) {
+            $result[$index]["penyakit"] = $data["penyakit"];
+            $result[$index]["bobot"] = $data["bobot"] / (1 - $conflict);
+            $result[$index]["conflict"] = 0;
+        }
+
+        return $result;
+    }
+
+    /**
+     * method isTeta
+     * untuk mengecek apakah ada teta atau tidak
+     * 
+     * @param array $data [himpunan yang ingin dicek]
+     * @return boolean
+     */
+
+    public function isTeta($data)
+    {
+        if (in_array('θ', $data)) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    /**
+     * method getNotTeta
+     * untuk mengambil data yang bukan teta
+     * 
+     * @param array $data [himpunan yang ingin dicek]
+     * @return array
+     */
+
+    public function getNotTeta($data)
+    {
+        $not_teta = [];
+        foreach ($data as $index => $penyakit) {
+            if ($penyakit != 'θ') {
+                array_push($not_teta, $penyakit);
+            }
+        }
+
+        return $not_teta;
     }
 }

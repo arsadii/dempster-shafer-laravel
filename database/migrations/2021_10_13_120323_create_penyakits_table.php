@@ -17,8 +17,8 @@ class CreatePenyakitsTable extends Migration
             $table->id();
             $table->string('gambar')->nullable();
             $table->string('nama_penyakit');
-            $table->text('keterangan');
-            $table->text('saran');
+            $table->text('keterangan')->nullable();
+            $table->text('saran')->nullable();
             $table->timestamps();
         });
     }
